@@ -146,7 +146,7 @@ if [[ "${_addbtn:-}" =~ ^([yY]|yes)$ ]]; then
 fi
 
 CHAT_ID_ARR=()
-IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}" || true
+IFS=',' read -r -a CHICK_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}" || true
 
 json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
@@ -247,25 +247,43 @@ kv "Start:" "${START_LOCAL}"
 kv "End:"   "${END_LOCAL}"
 
 # =========================================================================
-# ===== SCRIPT FIX: Define a helper function for config modification =====
+# ===== SCRIPT FIX (Robust config modification function) =====
 # =========================================================================
 _modify_config() {
-  case $PROTO in
-      "VLESS-WS")
-          sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
-          sed -i "s|/vless|$VLESS_PATH|g" config.json
-          ;;
-      "VLESS-gRPC")
-          sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
-          sed -i "s|\"network\": \"ws\"|\"network\": \"grpc\"|g" config.json
-          sed -i "s|\"wsSettings\": { \"path\": \"/vless\" }|\"grpcSettings\": { \"serviceName\": \"$VLESS_GRPC_SERVICE_NAME\" }|g" config.json
-          ;;
-      "Trojan-WS")
-          sed -i 's|"protocol": "vless"|"protocol": "trojan"|g' config.json
-          sed -i "s|\"clients\": \[ { \"id\": \"PLACEHOLDER_UUID\" } ]|\"users\": \[ { \"password\": \"$TROJAN_PASSWORD\" } ]|g" config.json
-          sed -i "s|\"path\": \"/vless\"|\"path\": \"$TROJAN_PATH\"|g" config.json
-          ;;
-  esac
+  # Step A: Inject Credentials (UUID/Password)
+  if [[ "$PROTO" == "Trojan-WS" ]]; then
+      # Change protocol to trojan
+      sed -i 's/"protocol": "vless"/"protocol": "trojan"/' config.json
+      # Replace VLESS clients block with Trojan users block
+      sed -i '/"clients": \[/,/]/c \
+"users": [\
+  { "password": "'"$TROJAN_PASSWORD"'" }\
+]' config.json
+  else
+      # Just replace the placeholder UUID for VLESS
+      sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
+  fi
+
+  # Step B: Configure Stream Settings (Path/Network)
+  if [[ "$PROTO" == "VLESS-WS" ]]; then
+      # Update path
+      sed -i "s|/vless|$VLESS_PATH|g" config.json
+  
+  elif [[ "$PROTO" == "Trojan-WS" ]]; then
+      # Update path
+      sed -i "s|/vless|$TROJAN_PATH|g" config.json
+  
+  elif [[ "$PROTO" == "VLESS-gRPC" ]]; then
+      # 1. Change network type from ws to grpc
+      sed -i 's/"network": "ws"/"network": "grpc"/' config.json
+      
+      # 2. Robustly replace the entire wsSettings block with the grpcSettings block
+      # This multi-line sed command finds the block from "wsSettings" to "}" and replaces it
+      sed -i '/"wsSettings": {/,/}/c \
+"grpcSettings": {\
+  "serviceName": "'"$VLESS_GRPC_SERVICE_NAME"'"\
+}' config.json
+  fi
 }
 # =========================================================================
 # ===== END OF FIX =====
@@ -280,7 +298,7 @@ if [[ ! -f "config.json" || ! -f "Dockerfile" ]]; then
 fi
 ok "Found config.json and Dockerfile."
 
-# --- Call the new helper function inside run_with_progress ---
+# Call the robust modify function inside the progress spinner
 run_with_progress "Modifying config.json" _modify_config
 
 # =================== Step 8: Enable APIs (From Script 2) ===================
@@ -311,22 +329,21 @@ ok "Service Ready"
 kv "URL:" "${C_GOLD}${BOLD}${URL_CANONICAL_RAW}${RESET}"
 
 # =================== Step 11: Protocol URLs (Combined) ===================
-# Use auto-generated credentials and custom paths
-declare uuid_or_pass # Use declare to ensure local scope if in function
+declare uuid_or_pass
 if [[ "$PROTO" == "Trojan-WS" ]]; then
     uuid_or_pass="$TROJAN_PASSWORD"
 else
     uuid_or_pass="$UUID"
 fi
 
-declare PATH_ENCODED # Use declare
+declare PATH_ENCODED
 if [[ "$PROTO" == "VLESS-gRPC" ]]; then
     PATH_ENCODED=$(echo "$VLESS_GRPC_SERVICE_NAME" | sed 's/\//%2F/g')
 else
     PATH_ENCODED=$(echo "${VLESS_PATH:-$TROJAN_PATH}" | sed 's/\//%2F/g')
 fi
 
-declare URI # Use declare
+declare URI
 case "$PROTO" in
   Trojan-WS)  URI="trojan://${uuid_or_pass}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&host=${CANONICAL_HOST}&type=ws&sni=${CANONICAL_HOST}#KSGCP-Trojan" ;;
   VLESS-WS)   URI="vless://${uuid_or_pass}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&encryption=none&host=${CANONICAL_HOST}&type=ws&sni=${CANONICAL_HOST}#KSGCP-Vless" ;;
