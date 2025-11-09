@@ -6,27 +6,27 @@
       "settings": {
         "clients": [
           {
-            "id": "ba0e3984-ccc9-48a3-8074-b2f507f41ce8" 
+            "id": "ba0e3984-ccc9-48a3-8074-b2f507f41ce8"
           }
         ],
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "grpc", 
-        "security": "reality", 
+        "network": "grpc",
+        "security": "reality",
         "grpcSettings": {
-          "serviceName": "mygrpcservice" 
+          "serviceName": "gprc-vless"
         },
         "realitySettings": {
           "show": false,
-          "dest": "www.google.com:443", 
+          "dest": "www.google.com:443",
           "xver": 0,
           "serverNames": [
-            "www.google.com" 
+            "www.google.com"
           ],
-          "privateKey": "YOUR_PRIVATE_KEY", 
+          "privateKey": "LsQ3A8j9p6+vKV84O6f851nS1zXGFjXYX3k6iPoDFU4=",
           "publicKeys": [
-            "YOUR_PUBLIC_KEY" 
+            "qYq9y1aL9m/nOiFqjVq31Lw+K/1QGhAawIe7iWqP1XA="
           ]
         }
       }
