@@ -1,494 +1,341 @@
-#!/bin/bash
-
-# GCP Cloud Run V2Ray(VLESS/Trojan) Deployment
-# Modified Version: Hardcoded values and auto-generation
-# FIX: Corrected if/else syntax error in create_share_link function
-
+#!/usr/bin/env bash
 set -euo pipefail
 
-# ------------------------------------------------------------------------------
-# 1. GLOBAL VARIABLES & STYLES
-# ------------------------------------------------------------------------------
+# ===== Ensure interactive reads even when run via curl/process substitution =====
+if [[ ! -t 0 ]] && [[ -e /dev/tty ]]; then
+  exec </dev/tty
+fi
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[1;32m'
-YELLOW='\033[1;33m'
-ORANGE='\033[0;33m' # Header Color
-BLUE='\033[1;34m'
-CYAN='\033[1;36m'
-WHITE='\033[1;37m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+# ===== Logging & error handler =====
+LOG_FILE="/tmp/ksgcp_cloudrun_$(date +%s).log"
+touch "$LOG_FILE"
+on_err() {
+  local rc=$?
+  echo "" | tee -a "$LOG_FILE"
+  echo "❌ ERROR: Command failed (exit $rc) at line $LINENO: ${BASH_COMMAND}" | tee -a "$LOG_FILE" >&2
+  echo "—— LOG (last 80 lines) ——" >&2
+  tail -n 80 "$LOG_FILE" >&2 || true
+  echo "📄 Log File: $LOG_FILE" >&2
+  exit $rc
+}
+trap on_err ERR
 
-# Global Configuration Variables (Defaults)
+# =================== Color & UI (KSGCP Theme) ===================
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  RESET=$'\e[0m'; BOLD=$'\e[1m'; DIM=$'\e[2m'
+  C_PURPLE=$'\e[38;5;99m'  # For banners
+  C_GOLD=$'\e[38;5;214m'   # For title and highlights
+  C_GREEN=$'\e[38;5;46m'  # OK
+  C_ORG=$'\e[38;5;208m'   # Warn
+  C_GREY=$'\e[38;5;245m'  # Dim
+  C_RED=$'\e[38;5;196m'   # Error
+else
+  RESET= BOLD= DIM= C_PURPLE= C_GOLD= C_GREEN= C_ORG= C_GREY= C_RED=
+fi
+
+hr(){ printf "${C_GOLD}%s${RESET}\n" "══════════════════════════════════════════════════"; }
+banner(){
+  local title="$1"
+  printf "\n${C_PURPLE}${BOLD}╔══════════════════════════════════════════════════╗${RESET}\n"
+  printf   "${C_PURPLE}${BOLD}║${RESET}  %s${RESET}\n" "$(printf "%-46s" "$title")"
+  printf   "${C_PURPLE}${BOLD}╚══════════════════════════════════════════════════╝${RESET}\n"
+}
+ok(){   printf "${C_GREEN}✔${RESET} %s\n" "$1"; }
+warn(){ printf "${C_ORG}⚠${RESET} %s\n" "$1"; }
+err(){  printf "${C_RED}✘${RESET} %s\n" "$1"; }
+kv(){   printf "   ${C_GREY}%s${RESET}  %s\n" "$1" "$2"; }
+
+printf "\n${C_GOLD}${BOLD}🚀 KSGCP Cloud Run — V2Ray Deploy (Hybrid Script)${RESET}\n"
+hr
+
+# =================== Spinner UI ===================
+run_with_progress() {
+  local label="$1"; shift
+  ( "$@" ) >>"$LOG_FILE" 2>&1 &
+  local pid=$!
+  local spinner=('|' '/' '-' '\')
+  local i=0
+  if [[ -t 1 ]]; then
+    printf "\e[?25l" # Hide cursor
+    while kill -0 "$pid" 2>/dev/null; do
+      printf "\r🌀 %s... %s" "$label" "${spinner[i]}"
+      i=$(( (i+1) % 4 ))
+      sleep 0.1 # Spinner speed
+    done
+    wait "$pid"; local rc=$?
+    printf "\r" # Clear the spinner line
+    if (( rc==0 )); then
+      printf "✅ %s... Done\n" "$label"
+    else
+      printf "❌ %s failed (see %s)\n" "$label" "$LOG_FILE"
+      return $rc
+    fi
+    printf "\e[?25h" # Show cursor
+  else
+    wait "$pid"
+  fi
+}
+
+# =================== GLOBAL VARS (From Script 1) ===================
 PROTOCOL=""
 UUID=""
 TROJAN_PASSWORD=""
-TELEGRAM_DESTINATION="none"
-
-# --- USER REQUESTED HARDCODED VALUES ---
-REGION="us-central1"
-CPU="2"
-MEMORY="2Gi"
-SERVICE_NAME="ksgcp"
-HOST_DOMAIN="m.googleapis.com"
-# --- END HARDCODED VALUES ---
-
-# Protocol Specific Defaults (Changed "ahlflk" to "ksgcp")
 VLESS_PATH="/ksgcp"
 TROJAN_PATH="/ksgcp"
 VLESS_GRPC_SERVICE_NAME="ksgcp"
+HOST_DOMAIN="m.googleapis.com"
 
-# Telegram Variables (will be set during selection)
-TELEGRAM_BOT_TOKEN=""
-TELEGRAM_CHANNEL_ID=""
+# =================== Step 1: Telegram Config (From Script 2) ===================
+banner "🚀 Step 1 — Telegram Setup"
+TELEGRAM_TOKEN="${TELEGRAM_TOKEN:-}"
+TELEGRAM_CHAT_IDS="${TELEGRAM_CHAT_IDS:-${TELEGRAM_CHAT_ID:-}}"
 
-# Emojis (will be set by show_emojis)
-EMOJI_SUCCESS=""
-EMOJI_WARN=""
-EMOJI_ERROR=""
-EMOJI_INFO=""
-EMOJI_SELECT=""
-EMOJI_PROC=""
-EMOJI_DEPLOY=""
-EMOJI_CHECK=""
-EMOJI_CLEAN=""
+if [[ ( -z "${TELEGRAM_TOKEN}" || -z "${TELEGRAM_CHAT_IDS}" ) && -f .env ]]; then
+  warn "Reading .env file..."
+  set -a; source ./.env; set +a
+  ok ".env file loaded."
+fi
 
+if [[ -z "${TELEGRAM_TOKEN:-}" ]]; then
+  read -rp "🤖 Telegram Bot Token: " _tk || true
+  TELEGRAM_TOKEN="${_tk:-}"
+fi
+if [[ -z "${TELEGRAM_TOKEN:-}" ]]; then
+  warn "Telegram token empty; deploy will continue without messages."
+else
+  ok "Telegram token captured."
+fi
 
-# ------------------------------------------------------------------------------
-# 2. UTILITY FUNCTIONS (LOGGING, UI, VALIDATION)
-# ------------------------------------------------------------------------------
+if [[ -z "${TELEGRAM_CHAT_IDS:-}" ]]; then
+  read -rp "👤 Owner/Channel Chat ID(s) (comma separated): " _ids || true
+  TELEGRAM_CHAT_IDS="${_ids// /}"
+fi
+if [[ -n "${TELEGRAM_CHAT_IDS:-}" ]]; then
+  ok "Telegram Chat ID(s) captured."
+fi
 
-# Emoji Function
-show_emojis() {
-    EMOJI_SUCCESS="✅"
-    EMOJI_WARN="⚠️"
-    EMOJI_ERROR="❌"
-    EMOJI_INFO="💡"
-    EMOJI_SELECT="🎯"
-    EMOJI_PROC="⚙️"
-    EMOJI_DEPLOY="🚀"
-    EMOJI_CHECK="📋"
-    EMOJI_CLEAN="🧹"
-}
+DEFAULT_LABEL="Join KSGCP Channel"
+DEFAULT_URL="https://t.me/ksgcp_channel" # <-- Placeholder URL
+BTN_LABELS=(); BTN_URLS=()
 
-# Beautiful Header/Banner
-header() {
-    local title="$1"
-    local border_color="${ORANGE}"
-    local text_color="${YELLOW}"
-    
-    local title_length=${#title}
-    local padding=4 
-    local total_width=$((title_length + padding))
-    
-    local top_bottom_fill=$(printf '━%.0s' $(seq 1 $((total_width - 2))))
-    local top_bottom="${border_color}┏${top_bottom_fill}┓${NC}"
-    local bottom_line="${border_color}┗${top_bottom_fill}┛${NC}"
-    
-    local title_line="${border_color}┃${NC} ${text_color}${BOLD}${title}${NC} ${border_color}┃${NC}"
-    
-    echo -e "${top_bottom}"
-    echo -e "${title_line}"
-    echo -e "${bottom_line}"
-}
-
-# Simple Logs with Emoji
-log() {
-    echo -e "${GREEN}${BOLD}${EMOJI_SUCCESS} [LOG]${NC} ${WHITE}$1${NC}"
-}
-
-warn() {
-    echo -e "${YELLOW}${BOLD}${EMOJI_WARN} [WARN]${NC} ${WHITE}$1${NC}"
-}
-
-error() {
-    echo -e "${RED}${BOLD}${EMOJI_ERROR} [ERROR]${NC} ${WHITE}$1${NC}"
-    exit 1
-}
-
-info() {
-    echo -e "${BLUE}${BOLD}${EMOJI_INFO} [INFO]${NC} ${WHITE}$1${NC}"
-}
-
-selected_info() {
-    echo -e "${GREEN}${BOLD}${EMOJI_SELECT} Selected:${NC} ${CYAN}$1${NC}"
-}
-
-# Spinner for background processes
-spinner() {
-    local pid=$1
-    local delay=0.1
-    local spin='/-\|' 
-    local i=0
-    
-    while kill -0 $pid 2>/dev/null; do
-        local index=$((i % ${#spin}))
-        echo -ne "\r${ORANGE}  [${spin:$index:1}]${NC} ${WHITE}$2...${NC}"
-        sleep $delay
-        i=$((i + 1))
-    done
-    echo -ne "\r${GREEN}  [${EMOJI_SUCCESS}]${NC} ${WHITE}$2... Done!${NC}\n"
-}
-
-# Function to validate Telegram IDs
-validate_id() {
-    if [[ ! $1 =~ ^-?[0-9]+$ ]]; then
-        warn "Invalid Telegram ID format. Must be a number (e.g., -1001234567890)."
-        return 1
-    fi
-    return 0
-}
-
-# Function to validate Telegram Bot Token
-validate_bot_token() {
-    local token_pattern='^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$'
-    if [[ ! $1 =~ $token_pattern ]]; then
-        warn "Invalid Telegram Bot Token format. Please try again."
-        return 1
-    fi
-    return 0
-}
-
-# ------------------------------------------------------------------------------
-# 3. USER INPUT FUNCTIONS (SIMPLIFIED)
-# ------------------------------------------------------------------------------
-
-# A. Telegram Destination Selection (Simplified)
-select_telegram_destination() {
-    header "📱 Telegram Notification Settings"
-    
-    while true; do
-        read -p "$(echo -e "${CYAN}Send link to Telegram Channel? (y/n) [n]: ${NC}")" telegram_choice
-        telegram_choice=${telegram_choice:-n}
-        
-        case $telegram_choice in
-            [Yy]*) 
-                TELEGRAM_DESTINATION="channel"
-                break
-                ;;
-            [Nn]*)
-                TELEGRAM_DESTINATION="none"
-                break
-                ;;
-            *) 
-                echo -e "${RED}Invalid selection. Please enter 'y' or 'n'.${NC}"
-                ;;
-        esac
-    done
-
-    if [[ "$TELEGRAM_DESTINATION" == "channel" ]]; then
-        echo
-        while true; do
-            read -p "Enter Telegram Bot Token: " TELEGRAM_BOT_TOKEN
-            if validate_bot_token "$TELEGRAM_BOT_TOKEN"; then break; else continue; fi
-        done
-        
-        while true; do
-            read -p "Enter Telegram Channel ID: " TELEGRAM_CHANNEL_ID
-            if validate_id "$TELEGRAM_CHANNEL_ID"; then break; fi
-        done
-
-        selected_info "Bot Token: ${TELEGRAM_BOT_TOKEN:0:8}..."
-        selected_info "Channel ID: $TELEGRAM_CHANNEL_ID"
-    fi
-    
-    selected_info "Telegram Destination: $TELEGRAM_DESTINATION"
-    echo
-}
-
-# B. Protocol Selection (Unchanged)
-select_protocol() {
-    header "🌐 V2RAY Protocol Selection"
-    echo -e "${CYAN}Choose your preferred V2Ray protocol for the Cloud Run instance:${NC}"
-    echo -e "${BOLD}1.${NC} VLESS-WS (VLESS + WebSocket + TLS) ${GREEN}[DEFAULT]${NC}"
-    echo -e "${BOLD}2.${NC} VLESS-gRPC (VLESS + gRPC + TLS)"
-    echo -e "${BOLD}3.${NC} Trojan-WS (Trojan + WebSocket + TLS)"
-    echo
-    
-    while true; do
-        read -p "Select V2Ray Protocol (1): " protocol_choice
-        protocol_choice=${protocol_choice:-1}
-        case $protocol_choice in
-            1) PROTOCOL="VLESS-WS"; break ;;
-            2) PROTOCOL="VLESS-gRPC"; break ;;
-            3) PROTOCOL="Trojan-WS"; break ;;
-            *) echo -e "${RED}Invalid selection. Please enter a number between 1-3.${NC}" ;;
-        esac
-    done
-    
-    selected_info "Protocol: $PROTOCOL"
-    echo
-}
-
-# C. Region Selection (REMOVED)
-# D. CPU Configuration (REMOVED)
-# E. Memory Configuration (REMOVED)
-# F. Service Name Configuration (REMOVED)
-# G. Host Domain Configuration (REMOVED)
-
-# H. UUID/Password Configuration (CHANGED TO AUTO-GENERATION)
-generate_credentials() {
-    header "🔑 Auto-Generating Credentials"
-    
-    if [[ "$PROTOCOL" == "Trojan-WS" ]]; then
-        # Auto-generate a 16-char password
-        if command -v openssl &> /dev/null; then
-            TROJAN_PASSWORD=$(openssl rand -hex 8)
-        else
-            # Fallback for systems without openssl
-            TROJAN_PASSWORD=$(cat /proc/sys/kernel/random/uuid | cut -c -16)
-        fi
-        log "Generated Trojan Password: $TROJAN_PASSWORD"
-        
+read -rp "➕ Add URL button(s)? [y/N]: " _addbtn || true
+if [[ "${_addbtn:-}" =~ ^([yY]|yes)$ ]]; then
+  i=0
+  while true; do
+    echo "—— Button $((i+1)) ——"
+    read -rp "🔖 Label [default: ${DEFAULT_LABEL}]: " _lbl || true
+    if [[ -z "${_lbl:-}" ]]; then
+      BTN_LABELS+=("${DEFAULT_LABEL}")
+      BTN_URLS+=("${DEFAULT_URL}")
+      ok "Added: ${DEFAULT_LABEL} → ${DEFAULT_URL}"
     else
-        # Auto-generate UUID
-        if command -v uuidgen &> /dev/null; then
-            UUID=$(uuidgen)
-        else
-            UUID=$(cat /proc/sys/kernel/random/uuid)
-        fi
-        log "Generated UUID: $UUID"
-        
-        # VLESS-gRPC ServiceName will use default "ksgcp"
-        if [[ "$PROTOCOL" == "VLESS-gRPC" ]]; then
-            log "Using default gRPC ServiceName: $VLESS_GRPC_SERVICE_NAME"
-        fi
+      read -rp "🔗 URL (http/https): " _url || true
+      if [[ -n "${_url:-}" && "${_url}" =~ ^https?:// ]]; then
+        BTN_LABELS+=("${_lbl}")
+        BTN_URLS+=("${_url}")
+        ok "Added: ${_lbl} → ${_url}"
+      else
+        warn "Skipped (invalid or empty URL)."
+      fi
     fi
-    echo
-}
+    i=$(( i + 1 ))
+    (( i >= 3 )) && break
+    read -rp "➕ Add another button? [y/N]: " _more || true
+    [[ "${_more:-}" =~ ^([yY]|yes)$ ]] || break
+  done
+fi
 
-# I. Summary and Confirmation (CHANGED TO SUMMARY ONLY)
-show_config_summary() {
-    header "${EMOJI_CHECK} Configuration Summary"
-    echo -e "${CYAN}${BOLD}Project ID:${NC}    $(gcloud config get-value project)"
-    echo -e "${CYAN}${BOLD}Protocol:${NC}      $PROTOCOL"
-    echo -e "${CYAN}${BOLD}Region:${NC}        $REGION (Fixed)"
-    echo -e "${CYAN}${BOLD}Service Name:${NC}  $SERVICE_NAME (Fixed)"
-    echo -e "${CYAN}${BOLD}Host Domain:${NC}   $HOST_DOMAIN (Fixed)"
-    
-    if [[ "$PROTOCOL" == "Trojan-WS" ]]; then
-        echo -e "${CYAN}${BOLD}Password:${NC}      ${TROJAN_PASSWORD} (Auto-Generated)"
-        echo -e "${CYAN}${BOLD}Path:${NC}          $TROJAN_PATH (Default)"
-    elif [[ "$PROTOCOL" == "VLESS-gRPC" ]]; then
-        echo -e "${CYAN}${BOLD}UUID:${NC}          $UUID (Auto-Generated)"
-        echo -e "${CYAN}${BOLD}ServiceName:${NC}   $VLESS_GRPC_SERVICE_NAME (Default)"
+CHAT_ID_ARR=()
+IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}" || true
+
+json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+tg_send(){
+  local text="$1" RM=""
+  if [[ -z "${TELEGRAM_TOKEN:-}" || ${#CHAT_ID_ARR[@]} -eq 0 ]]; then return 0; fi
+  if (( ${#BTN_LABELS[@]} > 0 )); then
+    local L1 U1 L2 U2 L3 U3
+    [[ -n "${BTN_LABELS[0]:-}" ]] && L1="$(json_escape "${BTN_LABELS[0]}")" && U1="$(json_escape "${BTN_URLS[0]}")"
+    [[ -n "${BTN_LABELS[1]:-}" ]] && L2="$(json_escape "${BTN_LABELS[1]}")" && U2="$(json_escape "${BTN_URLS[1]}")"
+    [[ -n "${BTN_LABELS[2]:-}" ]] && L3="$(json_escape "${BTN_LABELS[2]}")" && U3="$(json_escape "${BTN_URLS[2]}")"
+    if (( ${#BTN_LABELS[@]} == 1 )); then
+      RM="{\"inline_keyboard\":[[{\"text\":\"${L1}\",\"url\":\"${U1}\"}]]}"
+    elif (( ${#BTN_LABELS[@]} == 2 )); then
+      RM="{\"inline_keyboard\":[[{\"text\":\"${L1}\",\"url\":\"${U1}\"}],[{\"text\":\"${L2}\",\"url\":\"${U2}\"}]]}"
     else
-        echo -e "${CYAN}${BOLD}UUID:${NC}          $UUID (Auto-Generated)"
-        echo -e "${CYAN}${BOLD}Path:${NC}          $VLESS_PATH (Default)"
+      RM="{\"inline_keyboard\":[[{\"text\":\"${L1}\",\"url\":\"${U1}\"}],[{\"text\":\"${L2}\",\"url\":\"${U2}\"},{\"text\":\"${L3}\",\"url\":\"${U3}\"}]]}"
     fi
-    
-    echo -e "${CYAN}${BOLD}CPU/Memory:${NC}    $CPU core(s) / $MEMORY (Fixed)"
-    
-    if [[ "$TELEGRAM_DESTINATION" == "channel" ]]; then
-        echo -e "${CYAN}${BOLD}Telegram:${NC}      Send to Channel (Token: ${TELEGRAM_BOT_TOKEN:0:8}...)"
+  fi
+  for _cid in "${CHAT_ID_ARR[@]}"; do
+    if [[ -z "${_cid}" ]]; then continue; fi
+    local response
+    response=$(curl -s -S -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+      -d "chat_id=${_cid}" \
+      --data-urlencode "text=${text}" \
+      -d "parse_mode=HTML" \
+      ${RM:+--data-urlencode "reply_markup=${RM}"} 2>&1)
+    if echo "$response" | grep -q '"ok":true'; then
+      ok "Telegram sent → ${_cid}"
     else
-        echo -e "${CYAN}${BOLD}Telegram:${NC}      Not configured"
+      warn "Telegram failed → ${_cid} (Response: ${response})"
     fi
-    echo
-    
-    info "Proceeding with deployment automatically..."
-    echo
+    echo "TG_SEND: ${response}" >>"$LOG_FILE"
+  done
 }
 
+# =================== Step 2: Project (From Script 2) ===================
+banner "🧭 Step 2 — GCP Project"
+PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
+if [[ -z "$PROJECT" ]]; then
+  err "No active project. Run: gcloud config set project <YOUR_PROJECT_ID>"
+  exit 1
+fi
+ok "Project Loaded: ${PROJECT}"
 
-# ------------------------------------------------------------------------------
-# 4. CORE DEPLOYMENT FUNCTIONS
-# ------------------------------------------------------------------------------
+# =================== Step 3: Protocol (Combined) ===================
+banner "🧩 Step 3 — Select Protocol"
+echo "  1️⃣ VLESS WS"
+echo "  2️⃣ VLESS gRPC"
+echo "  3️⃣ Trojan WS"
+read -rp "Choose [1-3, default 1]: " _opt || true
+case "${_opt:-1}" in
+  2) PROTO="VLESS-gRPC" ;;
+  3) PROTO="Trojan-WS"  ;;
+  *) PROTO="VLESS-WS"   ;;
+esac
+ok "Protocol selected: ${PROTO^^}"
 
-# Config File Preparation
-prepare_config_files() {
-    log "Preparing Xray config file based on $PROTOCOL..."
-    
-    if [[ ! -f "config.json" ]]; then
-        error "config.json not found in current directory. Please create it first."
-        return 1
-    fi
-    
-    case $PROTOCOL in
-        "VLESS-WS")
-            sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
-            sed -i "s|/vless|$VLESS_PATH|g" config.json
-            ;;
-            
-        "VLESS-gRPC")
-            sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
-            sed -i "s|\"network\": \"ws\"|\"network\": \"grpc\"|g" config.json
-            sed -i "s|\"wsSettings\": { \"path\": \"/vless\" }|\"grpcSettings\": { \"serviceName\": \"$VLESS_GRPC_SERVICE_NAME\" }|g" config.json
-            ;;
-            
-        "Trojan-WS")
-            sed -i 's|"protocol": "vless"|"protocol": "trojan"|g' config.json
-            sed -i "s|\"clients\": \[ { \"id\": \"PLACEHOLDER_UUID\" } ]|\"users\": \[ { \"password\": \"$TROJAN_PASSWORD\" } ]|g" config.json
-            sed -i "s|\"path\": \"/vless\"|\"path\": \"$TROJAN_PATH\"|g" config.json
-            ;;
-            
-        *)
-            error "Unknown protocol: $PROTOCOL. Cannot prepare config."
-            ;;
-    esac
-    
-    log "config.json prepared successfully."
-}
-
-# GCP Deployment
-deploy_service() {
-    header "${EMOJI_DEPLOY} Starting Deployment"
-    info "This may take 3-5 minutes..."
-    
-    # This assumes a Dockerfile exists in the current directory (.)
-    (
-        gcloud run deploy "$SERVICE_NAME" \
-            --source . \
-            --region "$REGION" \
-            --cpu "$CPU" \
-            --memory "$MEMORY" \
-            --allow-unauthenticated \
-            --min-instances 0 \
-            --max-instances 2 \
-            --port 8080 \
-            --timeout=300s \
-            --quiet
-    ) &> "deploy_log.txt" &
-    
-    local deploy_pid=$!
-    spinner $deploy_pid "Deploying $SERVICE_NAME to $REGION"
-    
-    if ! wait $deploy_pid; then
-        error "Deployment failed. Check 'deploy_log.txt' for details."
-    fi
-    
-    log "Deployment successful."
-    rm -f deploy_log.txt
-}
-
-# Get Deployed Service URL
-get_service_url() {
-    log "Fetching service URL..."
-    local url
-    url=$(gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format 'value(status.url)')
-    
-    if [[ -z "$url" ]]; then
-        error "Could not retrieve service URL."
-    fi
-    
-    # Remove https:// from the URL
-    echo "${url#https://}"
-}
-
-
-# Share Link Creation
-create_share_link() {
-    local SERVICE_NAME="$1"
-    local DOMAIN="$2"
-    local UUID_OR_PASSWORD="$3"
-    local PROTOCOL_TYPE="$4"
-    local LINK=""
-    
-    local PATH_ENCODED
-    # --- THIS IS THE FIX ---
-    if [[ "$PROTOCOL_TYPE" == "VLESS-gRPC" ]]; then
-        PATH_ENCODED=$(echo "$VLESS_GRPC_SERVICE_NAME" | sed 's/\//%2F/g')
+# =================== Step 4: Auto-Generate Credentials (From Script 1) ===================
+banner "🔑 Step 4 — Auto-Generating Credentials"
+if [[ "$PROTO" == "Trojan-WS" ]]; then
+    if command -v openssl &> /dev/null; then
+        TROJAN_PASSWORD=$(openssl rand -hex 8)
     else
-        PATH_ENCODED=$(echo "${VLESS_PATH:-$TROJAN_PATH}" | sed 's/\//%2F/g')
+        TROJAN_PASSWORD=$(cat /proc/sys/kernel/random/uuid | cut -c -16)
     fi
-    # --- END OF FIX ---
-    
-    local HOST_ENCODED=$(echo "$HOST_DOMAIN" | sed 's/\./%2E/g')
-    
-    case $PROTOCOL_TYPE in
-        "VLESS-WS")
-            LINK="vless://${UUID_OR_PASSWORD}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&encryption=none&host=${DOMAIN}&fp=randomized&type=ws&sni=${DOMAIN}#${SERVICE_NAME}_VLESS-WS"
-            ;;
-            
-        "VLESS-gRPC")
-            LINK="vless://${UUID_OR_PASSWORD}@${HOST_DOMAIN}:443?security=tls&encryption=none&host=${DOMAIN}&fp=randomized&type=grpc&serviceName=${PATH_ENCODED}&sni=${DOMAIN}#${SERVICE_NAME}_VLESS-gRPC"
-            ;;
-            
-        "Trojan-WS")
-            LINK="trojan://${UUID_OR_PASSWORD}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&host=${DOMAIN}&fp=randomized&type=ws&sni=${DOMAIN}#${SERVICE_NAME}_Trojan-WS"
-            ;;
-    esac
-    
-    echo "$LINK"
-}
-
-# Telegram Notification Function
-send_to_telegram() {
-    local chat_id="$1"
-    local text_message="$2"
-
-    local url="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
-    
-    # Run in background to avoid blocking script
-    (
-        curl -s -X POST "$url" \
-            --data-urlencode "chat_id=${chat_id}" \
-            --data-urlencode "text=${text_message}" \
-            --data-urlencode "disable_web_page_preview=true"
-    ) &> /dev/null
-}
-
-# ------------------------------------------------------------------------------
-# 5. MAIN EXECUTION (Updated)
-# ------------------------------------------------------------------------------
-main() {
-    # 1. Setup
-    show_emojis
-    
-    # 2. Collect user inputs (Simplified)
-    select_telegram_destination
-    select_protocol
-    
-    # 3. Auto-generate credentials
-    generate_credentials
-    
-    # 4. Show summary (no confirmation)
-    show_config_summary
-    
-    # 5. Prepare local config.json
-    prepare_config_files
-    
-    # 6. Deploy
-    deploy_service
-    
-    # 7. Get deployed URL
-    local service_domain
-    service_domain=$(get_service_url)
-    log "Service URL: https://${service_domain}"
-    
-    # 8. Create Share Link
-    local uuid_or_pass
-    if [[ "$PROTOCOL" == "Trojan-WS" ]]; then
-        uuid_or_pass="$TROJAN_PASSWORD"
+    ok "Generated Trojan Password"
+else
+    if command -v uuidgen &> /dev/null; then
+        UUID=$(uuidgen)
     else
-        uuid_or_pass="$UUID"
+        UUID=$(cat /proc/sys/kernel/random/uuid)
     fi
-    
-    local share_link
-    share_link=$(create_share_link "$SERVICE_NAME" "$service_domain" "$uuid_or_pass" "$PROTOCOL")
-    
-    header "${EMOJI_SUCCESS} Deployment Complete"
-    echo -e "${WHITE}${BOLD}Your V2Ray Share Link:${NC}"
-    echo -e "${CYAN}${share_link}${NC}"
-    echo
-    
-    # 9. Send to Telegram (Simplified logic)
-    if [[ "$TELEGRAM_DESTINATION" == "channel" ]]; then
-        log "Sending link to Telegram Channel..."
-        
-        local message_header="✅ Deployment Successful: $SERVICE_NAME ($PROTOCOL)"
-        local final_message="$message_header
-Host: $service_domain
+    ok "Generated VLESS UUID"
+fi
 
-Link:
-$share_link"
-        
-        send_to_telegram "$TELEGRAM_CHANNEL_ID" "$final_message"
-        log "Telegram notification sent."
-    fi
-}
+# =================== Step 5: Region & Resources (Hardcoded) ===================
+banner "🧮 Step 5 — Resources (Auto-Set)"
+REGION="us-central1"
+CPU="2"
+MEMORY="2Gi"
+SERVICE="ksgcp"
+PORT="8080"
+TIMEOUT="3600"
+ok "Region: ${REGION}"
+ok "CPU/Mem: ${CPU} vCPU / ${MEMORY}"
+ok "Service: ${SERVICE}"
 
-# --- START SCRIPT ---
-main
+# =================== Step 6: Timezone Setup (From Script 2) ===================
+export TZ="Asia/Yangon"
+START_EPOCH="$(date +%s)"
+END_EPOCH="$(( START_EPOCH + 5*3600 ))"
+fmt_dt(){ date -d @"$1" "+%d.%m.%Y %I:%M %p"; }
+START_LOCAL="$(fmt_dt "$START_EPOCH")"
+END_LOCAL="$(fmt_dt "$END_EPOCH")"
+banner "🕒 Step 6 — Deployment Time"
+kv "Start:" "${START_LOCAL}"
+kv "End:"   "${END_LOCAL}"
+
+# =================== Step 7: Prepare Config (From Script 1) ===================
+banner "✍️ Step 7 — Prepare Config Files"
+if [[ ! -f "config.json" || ! -f "Dockerfile" ]]; then
+  err "Missing 'config.json' or 'Dockerfile' in this directory."
+  err "Please create them first before running this script."
+  exit 1
+fi
+
+ok "Found config.json and Dockerfile."
+
+run_with_progress "Modifying config.json" \
+  case $PROTO in
+      "VLESS-WS")
+          sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
+          sed -i "s|/vless|$VLESS_PATH|g" config.json
+          ;;
+      "VLESS-gRPC")
+          sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
+          sed -i "s|\"network\": \"ws\"|\"network\": \"grpc\"|g" config.json
+          sed -i "s|\"wsSettings\": { \"path\": \"/vless\" }|\"grpcSettings\": { \"serviceName\": \"$VLESS_GRPC_SERVICE_NAME\" }|g" config.json
+          ;;
+      "Trojan-WS")
+          sed -i 's|"protocol": "vless"|"protocol": "trojan"|g' config.json
+          sed -i "s|\"clients\": \[ { \"id\": \"PLACEHOLDER_UUID\" } ]|\"users\": \[ { \"password\": \"$TROJAN_PASSWORD\" } ]|g" config.json
+          sed -i "s|\"path\": \"/vless\"|\"path\": \"$TROJAN_PATH\"|g" config.json
+          ;;
+  esac
+
+# =================== Step 8: Enable APIs (From Script 2) ===================
+banner "⚙️ Step 8 — Enable APIs"
+run_with_progress "Enabling CloudRun & Build APIs" \
+  gcloud services enable run.googleapis.com cloudbuild.googleapis.com --quiet
+
+# =================== Step 9: Deploy (From Script 1) ===================
+banner "🚀 Step 9 — Deploying to Cloud Run"
+run_with_progress "Deploying ${SERVICE} (Building from source)" \
+  gcloud run deploy "$SERVICE" \
+    --source . \
+    --platform=managed \
+    --region="$REGION" \
+    --memory="$MEMORY" \
+    --cpu="$CPU" \
+    --timeout="$TIMEOUT" \
+    --allow-unauthenticated \
+    --port="$PORT" \
+    --min-instances=2 \
+    --quiet
+
+# =================== Step 10: Result (Combined) ===================
+URL_CANONICAL_RAW="$(gcloud run services describe "$SERVICE" --region="$REGION" --format='value(status.url)')"
+CANONICAL_HOST="${URL_CANONICAL_RAW#https://}"
+banner "✅ Result"
+ok "Service Ready"
+kv "URL:" "${C_GOLD}${BOLD}${URL_CANONICAL_RAW}${RESET}"
+
+# =================== Step 11: Protocol URLs (Combined) ===================
+# Use auto-generated credentials and custom paths
+local uuid_or_pass
+if [[ "$PROTO" == "Trojan-WS" ]]; then
+    uuid_or_pass="$TROJAN_PASSWORD"
+else
+    uuid_or_pass="$UUID"
+fi
+
+local PATH_ENCODED
+if [[ "$PROTO" == "VLESS-gRPC" ]]; then
+    PATH_ENCODED=$(echo "$VLESS_GRPC_SERVICE_NAME" | sed 's/\//%2F/g')
+else
+    PATH_ENCODED=$(echo "${VLESS_PATH:-$TROJAN_PATH}" | sed 's/\//%2F/g')
+fi
+
+case "$PROTO" in
+  Trojan-WS)  URI="trojan://${uuid_or_pass}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&host=${CANONICAL_HOST}&type=ws&sni=${CANONICAL_HOST}#KSGCP-Trojan" ;;
+  VLESS-WS)   URI="vless://${uuid_or_pass}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&encryption=none&host=${CANONICAL_HOST}&type=ws&sni=${CANONICAL_HOST}#KSGCP-Vless" ;;
+  VLESS-gRPC) URI="vless://${uuid_or_pass}@${HOST_DOMAIN}:443?security=tls&encryption=none&host=${CANONICAL_HOST}&type=grpc&serviceName=${PATH_ENCODED}&sni=${CANONICAL_HOST}#KSGCP-gRPC" ;;
+esac
+
+# =================== Step 12: Telegram Notify (From Script 2) ===================
+banner "📣 Step 10 — Telegram Notify"
+MSG=$(cat <<EOF
+<blockquote>🚀 KSGCP V2RAY KEY</blockquote>
+<blockquote>⏰ 5-Hour Free Service</blockquote>
+<blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
+<pre><code>${URI}</code></pre>
+
+<blockquote>⏳ End: <code>${END_LOCAL}</code></blockquote>
+EOF
+)
+
+tg_send "${MSG}"
+
+printf "\n${C_GOLD}${BOLD}✨ Done — Min Instances = 1 (Cold Start Prevented) | KSGCP Hybrid UI${RESET}\n"
+printf "${C_GREY}📄 Log file: ${LOG_FILE}${RESET}\n"
