@@ -246,17 +246,10 @@ banner "🕒 Step 6 — Deployment Time"
 kv "Start:" "${START_LOCAL}"
 kv "End:"   "${END_LOCAL}"
 
-# =================== Step 7: Prepare Config (From Script 1) ===================
-banner "✍️ Step 7 — Prepare Config Files"
-if [[ ! -f "config.json" || ! -f "Dockerfile" ]]; then
-  err "Missing 'config.json' or 'Dockerfile' in this directory."
-  err "Please create them first before running this script."
-  exit 1
-fi
-
-ok "Found config.json and Dockerfile."
-
-run_with_progress "Modifying config.json" \
+# =========================================================================
+# ===== SCRIPT FIX: Define a helper function for config modification =====
+# =========================================================================
+_modify_config() {
   case $PROTO in
       "VLESS-WS")
           sed -i "s/PLACEHOLDER_UUID/$UUID/g" config.json
@@ -273,6 +266,22 @@ run_with_progress "Modifying config.json" \
           sed -i "s|\"path\": \"/vless\"|\"path\": \"$TROJAN_PATH\"|g" config.json
           ;;
   esac
+}
+# =========================================================================
+# ===== END OF FIX =====
+# =========================================================================
+
+# =================== Step 7: Prepare Config (From Script 1) ===================
+banner "✍️ Step 7 — Prepare Config Files"
+if [[ ! -f "config.json" || ! -f "Dockerfile" ]]; then
+  err "Missing 'config.json' or 'Dockerfile' in this directory."
+  err "Please create them first before running this script."
+  exit 1
+fi
+ok "Found config.json and Dockerfile."
+
+# --- Call the new helper function inside run_with_progress ---
+run_with_progress "Modifying config.json" _modify_config
 
 # =================== Step 8: Enable APIs (From Script 2) ===================
 banner "⚙️ Step 8 — Enable APIs"
@@ -291,7 +300,7 @@ run_with_progress "Deploying ${SERVICE} (Building from source)" \
     --timeout="$TIMEOUT" \
     --allow-unauthenticated \
     --port="$PORT" \
-    --min-instances=2 \
+    --min-instances=1 \
     --quiet
 
 # =================== Step 10: Result (Combined) ===================
@@ -303,20 +312,21 @@ kv "URL:" "${C_GOLD}${BOLD}${URL_CANONICAL_RAW}${RESET}"
 
 # =================== Step 11: Protocol URLs (Combined) ===================
 # Use auto-generated credentials and custom paths
-local uuid_or_pass
+declare uuid_or_pass # Use declare to ensure local scope if in function
 if [[ "$PROTO" == "Trojan-WS" ]]; then
     uuid_or_pass="$TROJAN_PASSWORD"
 else
     uuid_or_pass="$UUID"
 fi
 
-local PATH_ENCODED
+declare PATH_ENCODED # Use declare
 if [[ "$PROTO" == "VLESS-gRPC" ]]; then
     PATH_ENCODED=$(echo "$VLESS_GRPC_SERVICE_NAME" | sed 's/\//%2F/g')
 else
     PATH_ENCODED=$(echo "${VLESS_PATH:-$TROJAN_PATH}" | sed 's/\//%2F/g')
 fi
 
+declare URI # Use declare
 case "$PROTO" in
   Trojan-WS)  URI="trojan://${uuid_or_pass}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&host=${CANONICAL_HOST}&type=ws&sni=${CANONICAL_HOST}#KSGCP-Trojan" ;;
   VLESS-WS)   URI="vless://${uuid_or_pass}@${HOST_DOMAIN}:443?path=${PATH_ENCODED}&security=tls&encryption=none&host=${CANONICAL_HOST}&type=ws&sni=${CANONICAL_HOST}#KSGCP-Vless" ;;
@@ -324,7 +334,7 @@ case "$PROTO" in
 esac
 
 # =================== Step 12: Telegram Notify (From Script 2) ===================
-banner "📣 Step 10 — Telegram Notify"
+banner "📣 Step 12 — Telegram Notify"
 MSG=$(cat <<EOF
 <blockquote>🚀 KSGCP V2RAY KEY</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
