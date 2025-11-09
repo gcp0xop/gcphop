@@ -248,27 +248,26 @@ main() {
     # Create Vless (gRPC + REALITY) share link
     URI="vless://${UUID}@${DOMAIN}:443?encryption=none&security=reality&sni=${REALITY_SNI}&fp=chrome&publicKey=${REALITY_PUBLIC_KEY}&type=grpc&serviceName=${ENCODED_SERVICE_NAME}#${SERVICE_NAME}"
     
-    # Get expiration date (30 days from now)
+        # Get expiration date (5 hours from now)
     # Check for GNU date (Linux) vs BSD date (macOS)
     if date --version >/dev/null 2>&1; then
-      END_LOCAL=$(date -d "+30 days" +"%Y-%m-%d %H:%M:%S")
+      # Linux date command
+      END_LOCAL=$(date -d "+5 hours" +"%Y-%m-%d %H:%M:%S")
     else
-      END_LOCAL=$(date -v+30d +"%Y-%m-%d %H:%M:%S")
+      # macOS/BSD date command
+      END_LOCAL=$(date -v+5H +"%Y-%m-%d %H:%M:%S")
     fi
     
     # Create Telegram message (HTML format)
     MSG=$(cat <<EOF
-<blockquote>GCP V2RAY KEY
-</blockquote>
-<blockquote>Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်
-</blockquote>
-
+<blockquote>🚀gRpc V2RAY KEY</blockquote>
+<blockquote>⏰5-Hour Free Service</blockquote>
+<blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
 <pre><code>${URI}</code></pre>
 
 <blockquote>⏳ End: <code>${END_LOCAL}</code></blockquote>
 EOF
 )
-
     # Create console message
     CONSOLE_MESSAGE="GCP V2Ray (gRPC) Deployment → Successful ✅
 ━━━━━━━━━━━━━━━━━━━━
