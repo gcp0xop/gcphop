@@ -40,11 +40,11 @@ readonly MEMORY="2Gi"
 readonly REPO_URL="https://github.com/gcp0xop/gcphop.git"
 readonly REPO_DIR="gcphop"
 
-# --- gRPC + REALITY Hardcoded Test Config ---
-# WARNING: These are public test keys. Do not use for production.
-readonly UUID="ba0e3984-ccc9-48a3-8074-b2f507f41ce8"
+# --- gRPC + REALITY Hardcoded Config ---
+# --- (!!! UPDATED WITH YOUR NEW KEYS !!!) ---
+readonly UUID="24f14e36-cf88-432f-98b6-5ed05f0d9ce0"
 readonly GRPC_SERVICE_NAME="gprc-vless"
-readonly REALITY_PUBLIC_KEY="qYq9y1aL9m/nOiFqjVq31Lw+K/1QGhAawIe7iWqP1XA="
+readonly REALITY_PUBLIC_KEY="3ViU07mPVXnbCU5zSlFaNej3c6T9ah4x864mugiVX0g"
 readonly REALITY_SNI="www.google.com"
 
 # --- Function to validate Telegram Bot Token ---
@@ -121,7 +121,6 @@ cleanup() {
     fi
 }
 
-# --- Telegram Sender ---
 # --- Telegram Sender ---
 send_to_telegram() {
     local chat_id="$1"
@@ -301,4 +300,3 @@ ${URI}
 
 # Run main function
 main "$@"
-
