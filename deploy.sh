@@ -146,7 +146,7 @@ if [[ "${_addbtn:-}" =~ ^([yY]|yes)$ ]]; then
 fi
 
 CHAT_ID_ARR=()
-IFS=',' read -r -a CHICK_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}" || true
+IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS:-}" || true
 
 json_escape(){ printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
@@ -255,6 +255,7 @@ _modify_config() {
       # Change protocol to trojan
       sed -i 's/"protocol": "vless"/"protocol": "trojan"/' config.json
       # Replace VLESS clients block with Trojan users block
+      # This robustly finds the multi-line block
       sed -i '/"clients": \[/,/]/c \
 "users": [\
   { "password": "'"$TROJAN_PASSWORD"'" }\
