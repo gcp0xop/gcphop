@@ -2,6 +2,7 @@
 
 # GCP Cloud Run V2Ray(VLESS/Trojan) Deployment
 # Modified Version: Hardcoded values and auto-generation
+# FIX: Corrected if/else syntax error in create_share_link function
 
 set -euo pipefail
 
@@ -386,11 +387,13 @@ create_share_link() {
     local LINK=""
     
     local PATH_ENCODED
-    if [[ "$PROTOCOL_TYPE" == "VLESS-gRPC" ]]; {
+    # --- THIS IS THE FIX ---
+    if [[ "$PROTOCOL_TYPE" == "VLESS-gRPC" ]]; then
         PATH_ENCODED=$(echo "$VLESS_GRPC_SERVICE_NAME" | sed 's/\//%2F/g')
-    } else {
+    else
         PATH_ENCODED=$(echo "${VLESS_PATH:-$TROJAN_PATH}" | sed 's/\//%2F/g')
-    }
+    fi
+    # --- END OF FIX ---
     
     local HOST_ENCODED=$(echo "$HOST_DOMAIN" | sed 's/\./%2E/g')
     
