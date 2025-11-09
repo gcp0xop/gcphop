@@ -1,21 +1,11 @@
-FROM alpine:latest
+# Use the official V2Ray image
+FROM v2fly/v2fly-core:v5.15.0
 
-RUN apk add --no-cache wget unzip
+# Copy the config.json prepared by the script into the container
+COPY config.json /etc/v2ray/config.json
 
-RUN wget https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip && \
-    unzip -q Xray-linux-64.zip && \
-    mkdir -p /usr/local/share/xray && \
-    mv xray /usr/local/bin/ && \
-    wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat -O /usr/local/share/xray/geoip.dat && \
-    wget https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat -O /usr/local/share/xray/geosite.dat && \
-    rm Xray-linux-64.zip && \
-    rm -f LICENSE README.md
+# Expose port 8080 (which V2Ray will listen on, as per our config.json)
+EXPOSE 8080
 
-RUN chmod +x /usr/local/bin/xray
-
-COPY config.json /etc/xray/config.json
-
-CMD ["/usr/local/bin/xray", "-config", "/etc/xray/config.json"]
-
-# join Telegram https://t.me/KS_GCP
-# my username @ThaToeSaw
+# Command to run V2Ray
+CMD ["v2ray", "-config", "/etc/v2ray/config.json"]
