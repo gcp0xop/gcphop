@@ -34,7 +34,7 @@ SERVICE_NAME="ksgcp"
 HOST_DOMAIN="m.googleapis.com"
 # --- END HARDCODED VALUES ---
 
-# Protocol Specific Defaults
+# Protocol Specific Defaults (Changed "ahlflk" to "ksgcp")
 VLESS_PATH="/ksgcp"
 TROJAN_PATH="/ksgcp"
 VLESS_GRPC_SERVICE_NAME="ksgcp"
@@ -250,7 +250,7 @@ generate_credentials() {
         fi
         log "Generated UUID: $UUID"
         
-        # VLESS-gRPC ServiceName will use default "ahlflk"
+        # VLESS-gRPC ServiceName will use default "ksgcp"
         if [[ "$PROTOCOL" == "VLESS-gRPC" ]]; then
             log "Using default gRPC ServiceName: $VLESS_GRPC_SERVICE_NAME"
         fi
@@ -293,7 +293,7 @@ show_config_summary() {
 
 
 # ------------------------------------------------------------------------------
-# 4. CORE DEPLOYMENT FUNCTIONS (Unchanged from previous full script)
+# 4. CORE DEPLOYMENT FUNCTIONS
 # ------------------------------------------------------------------------------
 
 # Config File Preparation
