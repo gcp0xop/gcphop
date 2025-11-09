@@ -1,4 +1,7 @@
 {
+  "log": {
+    "loglevel": "warning"
+  },
   "inbounds": [
     {
       "port": 8080,
@@ -6,29 +9,20 @@
       "settings": {
         "clients": [
           {
-            "id": "24f14e36-cf88-432f-98b6-5ed05f0d9ce0"
+            "id": "PLACEHOLDER_UUID"
           }
         ],
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "grpc",
-        "security": "reality",
-        "grpcSettings": {
-          "serviceName": "gprc-vless"
-        },
-        "realitySettings": {
-          "show": false,
-          "dest": "www.google.com:443",
-          "xver": 0,
-          "serverNames": [
-            "www.google.com"
-          ],
-          "privateKey": "OEK_VqALDMSQAnz-s8Hgkout4zJRRFgd3IEZfwMHw00",
-          "publicKeys": [
-            "3ViU07mPVXnbCU5zSlFaNej3c6T9ah4x864mugiVX0g"
-          ]
+        "network": "ws",
+        "wsSettings": {
+          "path": "/vless"
         }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls"]
       }
     }
   ],
