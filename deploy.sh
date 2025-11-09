@@ -122,19 +122,21 @@ cleanup() {
 }
 
 # --- Telegram Sender ---
+# --- Telegram Sender ---
 send_to_telegram() {
     local chat_id="$1"
     local message="$2"
     local response
-    
+
+    # Create a JSON payload using jq to safely handle newlines and special chars
+    JSON_PAYLOAD=$(jq -n \
+        --arg chat_id "$chat_id" \
+        --arg text "$message" \
+        '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')
+
     response=$(curl -s -w "%{http_code}" -X POST \
         -H "Content-Type: application/json" \
-        -d "{
-            \"chat_id\": \"${chat_id}\",
-            \"text\": \"$message\",
-            \"parse_mode\": \"HTML\",
-            \"disable_web_page_preview\": true
-        }" \
+        -d "$JSON_PAYLOAD" \
         "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage")
     
     local http_code="${response: -3}"
@@ -144,7 +146,7 @@ send_to_telegram() {
         log "✅ Successfully sent to Telegram Channel"
     else
         error "❌ Failed to send to Telegram (HTTP $http_code): $content"
-        warn "Please check your Bot Token and Channel ID."
+        warn "Please check your Bot Token, Channel ID, and message format."
     fi
 }
 
