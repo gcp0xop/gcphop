@@ -1,7 +1,4 @@
 {
-  "log": {
-    "loglevel": "warning"
-  },
   "inbounds": [
     {
       "port": 8080,
@@ -9,7 +6,8 @@
       "settings": {
         "clients": [
           {
-            "id": "PLACEHOLDER_UUID"
+            "id": "447947f6-ef16-4642-bc8c-a3229df67455",
+            "level": 0
           }
         ],
         "decryption": "none"
@@ -18,7 +16,7 @@
         "network": "ws",
         "security": "none",
         "wsSettings": {
-          "path": "/vless"
+          "path": "/tg-@ThaToeSaw"
         }
       }
     }
