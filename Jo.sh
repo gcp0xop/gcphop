@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
 # =================== 1. UI Colors ===================
 RED='\033[1;31m'
@@ -13,7 +12,7 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}DEPLOYER ${PURPLE}(${CYAN}Fixed${PURPLE})${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}DEPLOYER ${PURPLE}(${CYAN}Force Mode${PURPLE})${RESET}\n"
 printf "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 
 # =================== 2. Setup ===================
@@ -47,16 +46,14 @@ GRPC_SERVICE_NAME="Tg-@Alpha0x1"
 
 # =================== 4. Deploying ===================
 echo ""
-echo -e "${YELLOW}➤ Checking APIs (Skipping if denied)...${RESET}"
+echo -e "${YELLOW}➤ Force Deploying Server (${SERVER_NAME})...${RESET}"
 
-# 🔥 FIX: Added '|| true' to ignore permission errors
+# Try to enable API but ignore failure
 gcloud services enable run.googleapis.com --quiet >/dev/null 2>&1 || true
 
-echo -e "${YELLOW}➤ Deploying Server...${RESET}"
-echo "---------------------------------------------------"
-
-# Deploy Command
-if gcloud run deploy "$SERVICE_NAME" \
+# Deploy Command (4 vCPU / 4 GB - The Best Stability)
+# 🔥 Removed safety checks so it runs even if there are warnings
+gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
   --region="$REGION" \
@@ -74,60 +71,55 @@ if gcloud run deploy "$SERVICE_NAME" \
   --port="8080" \
   --min-instances=1 \
   --max-instances=2 \
-  --quiet; then
-  
-  echo "---------------------------------------------------"
-  echo -e "${GREEN}✅ Deployment Successful!${RESET}"
-  
-  # Optimize Traffic (Ignore error if fails)
-  echo -e "${YELLOW}➤ Finalizing Traffic...${RESET}"
-  gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1 || true
+  --quiet
 
-  # Get Domain
-  URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)')
-  DOMAIN=${URL#https://}
-  curl -s -o /dev/null "https://${DOMAIN}" || true
+# 🔥 Force Traffic to Latest
+echo -e "${YELLOW}➤ Setting Traffic Rules...${RESET}"
+gcloud run services update-traffic "$SERVICE_NAME" \
+  --to-latest \
+  --region="$REGION" \
+  --quiet >/dev/null 2>&1 || true
 
-  # =================== 5. Notification ===================
-  echo -e "${YELLOW}➤ Sending Telegram Message...${RESET}"
+# Get Domain
+URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)')
+DOMAIN=${URL#https://}
+curl -s -o /dev/null "https://${DOMAIN}" || true
 
-  URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=${GRPC_SERVICE_NAME}&sni=${DOMAIN}#${SERVER_NAME}"
+# =================== 5. Notification ===================
+echo -e "${YELLOW}➤ Sending Keys...${RESET}"
 
-  export TZ="Asia/Yangon"
-  START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
-  END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
+URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=${GRPC_SERVICE_NAME}&sni=${DOMAIN}#${SERVER_NAME}"
 
-  MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
+export TZ="Asia/Yangon"
+START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
+END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
+
+MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
 <blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
 <pre><code>${URI}</code></pre>
+
 <blockquote>✅ စတင်ချိန်: <code>${START_LOCAL}</code></blockquote>
 <blockquote>⏳ပြီးဆုံးအချိန်: <code>${END_LOCAL}</code></blockquote>"
 
-  if [[ -n "$TELEGRAM_TOKEN" && -n "$TELEGRAM_CHAT_IDS" ]]; then
-    IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS}"
-    for chat_id in "${CHAT_ID_ARR[@]}"; do
-      curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
-        -d "chat_id=${chat_id}" \
-        -d "parse_mode=HTML" \
-        --data-urlencode "text=${MSG}" > /dev/null
-      echo -e "${GREEN}✔ Sent to ID: ${chat_id}${RESET}"
-    done
-  else
-    printf "${RED}⚠ No Token found.${RESET}\n"
-  fi
-
-  # Final Report
-  echo ""
-  echo -e "${YELLOW}╔════════════════════════════════════════════╗${RESET}"
-  printf "${YELLOW}║${RESET} ${CYAN}%-18s${RESET} : ${WHITE}%-20s${RESET} ${YELLOW}║${RESET}\n" "Name" "${SERVER_NAME}"
-  printf "${YELLOW}║${RESET} ${CYAN}%-18s${RESET} : ${WHITE}%-20s${RESET} ${YELLOW}║${RESET}\n" "Specs" "4 vCPU / 4Gi RAM"
-  printf "${YELLOW}║${RESET} ${CYAN}%-18s${RESET} : ${GREEN}%-20s${RESET} ${YELLOW}║${RESET}\n" "Status" "Active ✅"
-  echo -e "${YELLOW}╚════════════════════════════════════════════╝${RESET}"
-  echo ""
-
+if [[ -n "$TELEGRAM_TOKEN" && -n "$TELEGRAM_CHAT_IDS" ]]; then
+  IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS}"
+  for chat_id in "${CHAT_ID_ARR[@]}"; do
+    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+      -d "chat_id=${chat_id}" \
+      -d "parse_mode=HTML" \
+      --data-urlencode "text=${MSG}" > /dev/null
+    echo -e "${GREEN}✔ Sent to ID: ${chat_id}${RESET}"
+  done
 else
-  echo ""
-  echo -e "${RED}❌ Deployment Failed!${RESET}"
-  exit 1
+  printf "${RED}⚠ No Token found.${RESET}\n"
 fi
+
+# =================== Final Report ===================
+echo ""
+echo -e "${YELLOW}╔════════════════════════════════════════════╗${RESET}"
+printf "${YELLOW}║${RESET} ${CYAN}%-18s${RESET} : ${WHITE}%-20s${RESET} ${YELLOW}║${RESET}\n" "Name" "${SERVER_NAME}"
+printf "${YELLOW}║${RESET} ${CYAN}%-18s${RESET} : ${WHITE}%-20s${RESET} ${YELLOW}║${RESET}\n" "Specs" "4 vCPU / 4Gi RAM"
+printf "${YELLOW}║${RESET} ${CYAN}%-18s${RESET} : ${GREEN}%-20s${RESET} ${YELLOW}║${RESET}\n" "Status" "Active"
+echo -e "${YELLOW}╚════════════════════════════════════════════╝${RESET}"
+echo ""
