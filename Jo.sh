@@ -8,7 +8,7 @@ CYAN='\033[1;36m'
 RESET='\033[0m'
 
 clear
-printf "\n${RED}🚀 ALPHA${YELLOW}0x1 ${GREEN}SURVIVAL MODE${RESET}\n"
+printf "\n${RED}🚀 ALPHA${YELLOW}0x1 ${GREEN}gRPC FIX${RESET}\n"
 echo "----------------------------------------"
 
 # =================== 1. Setup ===================
@@ -31,11 +31,9 @@ IMAGE="a0x1/al0x1"
 
 # =================== 3. Deploying ===================
 echo ""
-echo -e "${YELLOW}➤ Deploying Server (Basic High-Spec)...${RESET}"
+echo -e "${YELLOW}➤ Deploying gRPC Server (Correction)...${RESET}"
 
-# 🔥 REMOVED: --no-cpu-throttling, --session-affinity, --ingress (To Fix Error)
-# 🔥 KEPT: 4 vCPU / 4 GB RAM (To Keep Speed)
-
+# 🔥 FIX: Added --use-http2 (Essential for gRPC)
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
@@ -44,6 +42,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --cpu="4" \
   --timeout="3600" \
   --allow-unauthenticated \
+  --use-http2 \
   --set-env-vars UUID="${GEN_UUID}" \
   --port="8080" \
   --min-instances=1 \
@@ -60,6 +59,7 @@ DOMAIN=${URL#https://}
 # =================== 4. Notification ===================
 echo -e "${YELLOW}➤ Sending Keys...${RESET}"
 
+# Link format verified for gRPC
 URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
