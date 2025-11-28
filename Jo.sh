@@ -4,23 +4,17 @@
 RED='\033[1;31m'
 GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
-CYAN='\033[1;36m'
 RESET='\033[0m'
 
 clear
-printf "\n${RED}🚀 ALPHA${YELLOW}0x1 ${GREEN}gRPC FIX${RESET}\n"
+printf "\n${RED}🚀 ALPHA${YELLOW}0x1 ${GREEN}BYPASS MODE${RESET}\n"
 echo "----------------------------------------"
 
 # =================== 1. Setup ===================
 if [[ -f .env ]]; then source ./.env; fi
 
-if [[ -z "${TELEGRAM_TOKEN:-}" ]]; then 
-  read -p "💎 Bot Token: " TELEGRAM_TOKEN
-fi
-
-if [[ -z "${TELEGRAM_CHAT_IDS:-}" ]]; then 
-  read -p "💎 Chat ID:   " TELEGRAM_CHAT_IDS
-fi
+if [[ -z "${TELEGRAM_TOKEN:-}" ]]; then read -p "Bot Token: " TELEGRAM_TOKEN; fi
+if [[ -z "${TELEGRAM_CHAT_IDS:-}" ]]; then read -p "Chat ID:   " TELEGRAM_CHAT_IDS; fi
 
 # =================== 2. Config ===================
 SERVER_NAME="Alpha0x1-$(date +%s | tail -c 4)"
@@ -31,26 +25,30 @@ IMAGE="a0x1/al0x1"
 
 # =================== 3. Deploying ===================
 echo ""
-echo -e "${YELLOW}➤ Deploying gRPC Server (Correction)...${RESET}"
+echo -e "${YELLOW}➤ Deploying Server (Authentication Bypass)...${RESET}"
 
-# 🔥 FIX: Added --use-http2 (Essential for gRPC)
+# Step A: Deploy without allowing unauthenticated first (to avoid immediate error)
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
   --region="$REGION" \
-  --memory="4Gi" \
-  --cpu="4" \
+  --memory="2Gi" \
+  --cpu="2" \
   --timeout="3600" \
-  --allow-unauthenticated \
   --use-http2 \
   --set-env-vars UUID="${GEN_UUID}" \
   --port="8080" \
   --min-instances=1 \
-  --max-instances=2 \
+  --max-instances=1 \
   --quiet
 
-# Traffic Force
-gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
+# Step B: Force Public Access (The Bypass)
+echo -e "${YELLOW}➤ Forcing Public Access Policy...${RESET}"
+gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
+  --region="$REGION" \
+  --member="allUsers" \
+  --role="roles/run.invoker" \
+  --quiet
 
 # Get URL
 URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)')
@@ -59,7 +57,6 @@ DOMAIN=${URL#https://}
 # =================== 4. Notification ===================
 echo -e "${YELLOW}➤ Sending Keys...${RESET}"
 
-# Link format verified for gRPC
 URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
@@ -67,8 +64,8 @@ START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
 END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
 
 MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
+<blockquote>🔐 Mode: Auth Bypass</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
-<blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
 <pre><code>${URI}</code></pre>
 <blockquote>✅ စတင်ချိန်: <code>${START_LOCAL}</code></blockquote>
 <blockquote>⏳ပြီးဆုံးအချိန်: <code>${END_LOCAL}</code></blockquote>"
