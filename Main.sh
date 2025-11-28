@@ -88,8 +88,8 @@ END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
 MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
 <blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
-
 <pre><code>${URI}</code></pre>
+
 <blockquote>✅ စတင်ချိန်: <code>${START_LOCAL}</code></blockquote>
 <blockquote>⏳ပြီးဆုံးအချိန်: <code>${END_LOCAL}</code></blockquote>"
 
