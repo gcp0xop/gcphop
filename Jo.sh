@@ -13,10 +13,10 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}DEPLOYER ${PURPLE}(${CYAN}Safe Mode${PURPLE})${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}DEPLOYER ${PURPLE}(${CYAN}Fixed${PURPLE})${RESET}\n"
 printf "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 
-# =================== 2. Setup (Fixed Colors) ===================
+# =================== 2. Setup ===================
 if [[ -f .env ]]; then source ./.env; fi
 
 if [[ -z "${TELEGRAM_TOKEN:-}" ]]; then 
@@ -45,15 +45,17 @@ REGION="us-central1"
 IMAGE="a0x1/al0x1"
 GRPC_SERVICE_NAME="Tg-@Alpha0x1"
 
-# =================== 4. Deploying (Visible) ===================
+# =================== 4. Deploying ===================
 echo ""
-echo -e "${YELLOW}➤ Checking APIs...${RESET}"
-gcloud services enable run.googleapis.com --quiet >/dev/null 2>&1
+echo -e "${YELLOW}➤ Checking APIs (Skipping if denied)...${RESET}"
 
-echo -e "${YELLOW}➤ Deploying Server (Logs Visible)...${RESET}"
+# 🔥 FIX: Added '|| true' to ignore permission errors
+gcloud services enable run.googleapis.com --quiet >/dev/null 2>&1 || true
+
+echo -e "${YELLOW}➤ Deploying Server...${RESET}"
 echo "---------------------------------------------------"
 
-# Deploy Command (Foreground - No Spinner)
+# Deploy Command
 if gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
@@ -77,14 +79,14 @@ if gcloud run deploy "$SERVICE_NAME" \
   echo "---------------------------------------------------"
   echo -e "${GREEN}✅ Deployment Successful!${RESET}"
   
-  # Optimize Traffic
+  # Optimize Traffic (Ignore error if fails)
   echo -e "${YELLOW}➤ Finalizing Traffic...${RESET}"
-  gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
+  gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1 || true
 
   # Get Domain
   URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)')
   DOMAIN=${URL#https://}
-  curl -s -o /dev/null "https://${DOMAIN}"
+  curl -s -o /dev/null "https://${DOMAIN}" || true
 
   # =================== 5. Notification ===================
   echo -e "${YELLOW}➤ Sending Telegram Message...${RESET}"
@@ -126,7 +128,6 @@ if gcloud run deploy "$SERVICE_NAME" \
 
 else
   echo ""
-  echo -e "${RED}❌ Deployment Failed! Please check the error message above.${RESET}"
-  echo -e "${RED}Possible causes: Region Quota exceeded or Billing issue.${RESET}"
+  echo -e "${RED}❌ Deployment Failed!${RESET}"
   exit 1
 fi
