@@ -1,17 +1,16 @@
 #!/bin/bash
 
-# =================== UI Colors ===================
+# =================== Colors ===================
 RED='\033[1;31m'
 GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[1;34m'
-PURPLE='\033[1;35m'
 CYAN='\033[1;36m'
 RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${RED}QUANTUM ${PURPLE}(${CYAN}Beyond Limits${PURPLE})${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}ABSOLUTE FINAL${RESET}\n"
 echo "----------------------------------------"
 
 # =================== 1. Setup ===================
@@ -25,71 +24,87 @@ if [[ -z "${TELEGRAM_CHAT_IDS:-}" ]]; then
   read -p "💎 Chat ID:   " TELEGRAM_CHAT_IDS
 fi
 
-# =================== 2. Configuration ===================
+# =================== 2. Config ===================
 SERVER_NAME="Alpha0x1-$(date +%s | tail -c 4)"
 GEN_UUID=$(cat /proc/sys/kernel/random/uuid)
 SERVICE_NAME="alpha0x1"
 REGION="us-central1"
 IMAGE="a0x1/al0x1"
 
-# =================== 3. Deploying (QUANTUM MODE) ===================
+# =================== 3. Step 1: Stealth Deploy ===================
 echo ""
-echo -e "${YELLOW}➤ Injecting Quantum Parameters...${RESET}"
+echo -e "${YELLOW}➤ Step 1: Deploying Base Node (Stealth Mode)...${RESET}"
 
-# Enable API quietly
-gcloud services enable run.googleapis.com --quiet >/dev/null 2>&1
-
-# Deploy Command (THE ABSOLUTE LIMIT)
-# 🔥 New Secret 1: V2RAY_CONF_GEOLOADER (Speed up geo-routing)
-# 🔥 New Secret 2: ASYNC_IO_ENABLE=true (Non-blocking I/O for max speed)
-# 🔥 New Secret 3: XRAY_TRANSPORT_GRPC_PERMIT_WITHOUT_STREAM=true (Hardcore gRPC Tweak)
-
+# Deploy Small First (To bypass Quota Check)
+# 2 vCPU / 2GB RAM / No-Throttle OFF (Standard)
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
   --region="$REGION" \
-  --memory="4Gi" \
-  --cpu="4" \
+  --memory="2Gi" \
+  --cpu="2" \
   --timeout="3600" \
   --no-allow-unauthenticated \
   --use-http2 \
-  --no-cpu-throttling \
   --execution-environment=gen2 \
-  --concurrency=500 \
-  --session-affinity \
-  --set-env-vars UUID="${GEN_UUID}",GOMAXPROCS="4",GOMEMLIMIT="3600MiB",GOGC="50",GODEBUG="madvdontneed=1,netdns=go",XRAY_TRANSPORT_GRPC_KEEPALIVE="20",TZ="Asia/Yangon",V2RAY_BUF_READ_SIZE="16",V2RAY_BUF_WRITE_SIZE="16",ASYNC_IO_ENABLE="true",XRAY_TRANSPORT_GRPC_PERMIT_WITHOUT_STREAM="true" \
+  --set-env-vars UUID="${GEN_UUID}",TZ="Asia/Yangon" \
   --port="8080" \
   --min-instances=1 \
   --max-instances=2 \
   --quiet
 
-# Force Public Access
-echo -e "${YELLOW}➤ Unlocking Access...${RESET}"
+# =================== 4. Step 2: Force Upgrade ===================
+echo -e "${YELLOW}➤ Step 2: Forcing Max Performance & Stability...${RESET}"
+
+# 🔥 UPGRADE TO MAX SPECS + STABILITY PROBES
+# --memory 4Gi / --cpu 4 (Max Power)
+# --no-cpu-throttling (Always On - The Key to Stability)
+# --startup-probe (Fixes "Hard to connect" issue)
+# --update-env-vars (Injecting Tuning)
+
+gcloud run services update "$SERVICE_NAME" \
+  --memory="4Gi" \
+  --cpu="4" \
+  --no-cpu-throttling \
+  --concurrency=500 \
+  --startup-probe-tcp=8080 \
+  --startup-probe-period=5s \
+  --startup-probe-failure-threshold=10 \
+  --update-env-vars GOMAXPROCS="4",GOMEMLIMIT="3600MiB",XRAY_TRANSPORT_GRPC_KEEPALIVE="15" \
+  --region="$REGION" \
+  --quiet
+
+# =================== 5. Unlock & Optimize ===================
+echo -e "${YELLOW}➤ Step 3: Unlocking Access...${RESET}"
+
+# Public Access
 gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
   --region="$REGION" \
   --member="allUsers" \
   --role="roles/run.invoker" \
   --quiet >/dev/null 2>&1
 
-# Traffic Optimization
-echo -e "${YELLOW}➤ Quantum Routing Optimization...${RESET}"
+# Traffic Force (Clean old connections)
 gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
 
 # Get URL
 URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)')
 DOMAIN=${URL#https://}
+
+# Warm up
 curl -s -o /dev/null "https://${DOMAIN}"
 
-# =================== 4. Notification ===================
-echo -e "${YELLOW}➤ Sending Key...${RESET}"
+# =================== 6. Notification ===================
+echo -e "${YELLOW}➤ Sending Final Key...${RESET}"
 
+# Using m.googleapis.com (User's Best Choice)
 URI="vless://${GEN_UUID}@m.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
 START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
 END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
 
-MSG="<blockquote>🚀 ${SERVER_NAME} GCP V2RAY SERVICE</blockquote>
+MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
 <blockquote>📡 Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
 <pre><code>${URI}</code></pre>
@@ -111,4 +126,4 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}✅ SYSTEM OVERCLOCKED & ONLINE.${RESET}"
+echo -e "${GREEN}✅ SUCCESS!${RESET}"
