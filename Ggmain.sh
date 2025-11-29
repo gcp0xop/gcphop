@@ -12,7 +12,7 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}ULTIMATE ${PURPLE}(${CYAN}Full Option${PURPLE})${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}REPAIR EDITION ${PURPLE}(${CYAN}Fixed${PURPLE})${RESET}\n"
 printf "${PURPLE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
 
 # =================== 1. Setup ===================
@@ -26,21 +26,17 @@ if [[ -z "${TELEGRAM_CHAT_IDS:-}" ]]; then
   read -p "💎 Chat ID:   " TELEGRAM_CHAT_IDS
 fi
 
-# =================== 2. Stealth Config ===================
-# Legit Google Names (To trick ISP)
-NAMES=("drive-sync" "photos-api" "android-secure" "play-console" "cloud-storage" "system-core")
-RAND_NAME=${NAMES[$RANDOM % ${#NAMES[@]}]}
-RAND_ID=$(date +%s | tail -c 3)
-
-SERVER_NAME="${RAND_NAME}-v${RAND_ID}"
+# =================== 2. Config ===================
+SERVER_NAME="Alpha0x1-$(date +%s | tail -c 4)"
 GEN_UUID=$(cat /proc/sys/kernel/random/uuid)
+SERVICE_NAME="alpha0x1"
 REGION="us-central1"
 IMAGE="a0x1/al0x1"
 GRPC_SERVICE_NAME="Tg-@Alpha0x1"
 
 # =================== 3. Cleanup & Deploy ===================
 echo ""
-echo -e "${YELLOW}➤ Cleaning Old Services (Freeing Quota)...${RESET}"
+echo -e "${YELLOW}➤ Cleaning & Preparing...${RESET}"
 
 # Auto-Cleanup
 EXISTING=$(gcloud run services list --platform managed --region $REGION --format="value(SERVICE)")
@@ -50,13 +46,12 @@ if [[ -n "$EXISTING" ]]; then
   done
 fi
 
-echo -e "${YELLOW}➤ Deploying Ultimate Node (${SERVER_NAME})...${RESET}"
+echo -e "${YELLOW}➤ Deploying Stable Node...${RESET}"
 
-# Deploy Command (THE FULL STACK)
-# 🔥 All 5 Optimization Codes Included
-# 🔥 4 vCPU / 4 GB RAM / Gen2 / Concurrency 1000
-# 🔥 Min Instance 1 (Keeps Server Alive)
-gcloud run deploy "$SERVER_NAME" \
+# Deploy Command (FIXED STABILITY)
+# 🔥 Removed risky env vars (KEEPALIVE/GODEBUG) causing crash
+# 🔥 Kept High Specs (4 CPU / 4 GB)
+gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
   --region="$REGION" \
@@ -65,32 +60,34 @@ gcloud run deploy "$SERVER_NAME" \
   --timeout="3600" \
   --no-allow-unauthenticated \
   --use-http2 \
+  --no-cpu-throttling \
   --execution-environment=gen2 \
   --concurrency=1000 \
   --session-affinity \
-  --set-env-vars UUID="${GEN_UUID}",GOMAXPROCS="4",GOMEMLIMIT="3600MiB",TZ="Asia/Yangon",XRAY_TRANSPORT_GRPC_KEEPALIVE="15",GODEBUG="madvdontneed=1" \
+  --set-env-vars UUID="${GEN_UUID}",GOMAXPROCS="4",GOMEMLIMIT="3600MiB",TZ="Asia/Yangon" \
   --port="8080" \
   --min-instances=1 \
   --max-instances=2 \
   --quiet
 
-# Force Public Access (Bypass Method)
+# Force Public Access (Bypass)
 echo -e "${YELLOW}➤ Unlocking Access...${RESET}"
-gcloud run services add-iam-policy-binding "$SERVER_NAME" \
+gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
   --region="$REGION" \
   --member="allUsers" \
   --role="roles/run.invoker" \
   --quiet >/dev/null 2>&1
 
-# Traffic Optimization (Zero Zombie Connections)
+# Traffic Optimization
 echo -e "${YELLOW}➤ Finalizing Network...${RESET}"
-gcloud run services update-traffic "$SERVER_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
+gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
 
 # Get URL
 URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "$REGION" --format 'value(status.url)')
 DOMAIN=${URL#https://}
 
-# Warm up
+# Warm up (Wait 5s for propagation)
+sleep 5
 curl -s -o /dev/null "https://${DOMAIN}"
 
 # =================== 4. Notification ===================
