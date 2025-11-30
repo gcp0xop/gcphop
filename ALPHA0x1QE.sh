@@ -10,7 +10,7 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}ABSOLUTE FINAL${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}ABSOLUTE FINAL (Qwiklabs Optimized)${RESET}\n"
 echo "----------------------------------------"
 
 # =================== 1. Setup ===================
@@ -36,7 +36,6 @@ echo ""
 echo -e "${YELLOW}➤ Step 1: Deploying Base Node (Stealth Mode)...${RESET}"
 
 # Deploy Small First (To bypass Quota Check)
-# 2 vCPU / 2GB RAM / No-Throttle OFF (Standard)
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
@@ -56,21 +55,17 @@ gcloud run deploy "$SERVICE_NAME" \
 # =================== 4. Step 2: Force Upgrade ===================
 echo -e "${YELLOW}➤ Step 2: Forcing Max Performance & Stability...${RESET}"
 
-# 🔥 UPGRADE TO MAX SPECS + STABILITY PROBES
-# --memory 4Gi / --cpu 4 (Max Power)
-# --no-cpu-throttling (Always On - The Key to Stability)
-# --startup-probe (Fixes "Hard to connect" issue)
-# --update-env-vars (Injecting Tuning)
-
+# Optimized for Qwiklabs (No CPU Boost)
+# Added: GODEBUG (DNS), GOGC (RAM), XRAY_BUFFER (Streaming), XRAY_JSON (Log)
 gcloud run services update "$SERVICE_NAME" \
   --memory="4Gi" \
   --cpu="4" \
   --no-cpu-throttling \
-  --concurrency=500 \
+  --concurrency=300 \
   --startup-probe-tcp=8080 \
-  --startup-probe-period=5s \
-  --startup-probe-failure-threshold=10 \
-  --update-env-vars GOMAXPROCS="4",GOMEMLIMIT="3600MiB",XRAY_TRANSPORT_GRPC_KEEPALIVE="15" \
+  --startup-probe-period=1s \
+  --startup-probe-failure-threshold=30 \
+  --update-env-vars GOMAXPROCS="4",GOMEMLIMIT="3600MiB",XRAY_TRANSPORT_GRPC_KEEPALIVE="15",GODEBUG="netdns=go",GOGC="50",XRAY_JSON="{\"log\":{\"loglevel\":\"error\"}}",XRAY_BUFFER_SIZE="4" \
   --region="$REGION" \
   --quiet
 
@@ -84,7 +79,7 @@ gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
   --role="roles/run.invoker" \
   --quiet >/dev/null 2>&1
 
-# Traffic Force (Clean old connections)
+# Traffic Force
 gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
 
 # Get URL
@@ -97,8 +92,8 @@ curl -s -o /dev/null "https://${DOMAIN}"
 # =================== 6. Notification ===================
 echo -e "${YELLOW}➤ Sending Final Key...${RESET}"
 
-# Using m.googleapis.com (User's Best Choice)
-URI="vless://${GEN_UUID}@m.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
+# Optimized URI: alpn=h2 (Fast Handshake), fp=chrome (Anti-Throttle), packetEncoding=xudp (Gaming)
+URI="vless://${GEN_UUID}@m.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}&alpn=h2&fp=chrome&allowInsecure=1&packetEncoding=xudp#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
 START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
