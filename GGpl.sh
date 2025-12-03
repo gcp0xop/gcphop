@@ -9,7 +9,7 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}PERFECT SETUP${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}DEPLOYER${RESET}\n"
 echo "----------------------------------------"
 
 # 1. Setup
@@ -37,12 +37,7 @@ echo -e "${YELLOW}➤ Deploying Server...${RESET}"
 # Cleanup
 gcloud run services delete "$SERVICE_NAME" --platform managed --region "$REGION" --quiet >/dev/null 2>&1
 
-# Deploy Command (The Best Config)
-# Specs: 4 vCPU / 4 GB (Max Power)
-# Network: Gen2 / No-Throttling (Max Speed)
-# Tuning: GOMAXPROCS=4 (Use all cores), KeepAlive=15s (Stable Connection)
-# Scaling: Min 1 (Always On) / Max 2 (Quota Safe)
-
+# Deploy Command (4 vCPU / 4 GB / Stable Tuning)
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
@@ -72,19 +67,21 @@ curl -s -o /dev/null "https://${DOMAIN}"
 # 4. Notification
 echo -e "${YELLOW}➤ Sending Key...${RESET}"
 
-URI="vless://${GEN_UUID}@m.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
+# 🔥 Changed back to vpn.googleapis.com as requested
+URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
 START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
 END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
 
+# 🔥 Message format updated exactly as requested
 MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
-<blockquote>📡 Address: m.googleapis.com</blockquote>
+<blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
 <pre><code>${URI}</code></pre>
 
-<blockquote>✅ Start: <code>${START_LOCAL}</code></blockquote>
-<blockquote>⏳ End: <code>${END_LOCAL}</code></blockquote>"
+<blockquote>✅ စတင်ချိန်: <code>${START_LOCAL}</code></blockquote>
+<blockquote>⏳ပြီးဆုံးအချိန်: <code>${END_LOCAL}</code></blockquote>"
 
 if [[ -n "$TELEGRAM_TOKEN" && -n "$TELEGRAM_CHAT_IDS" ]]; then
   IFS=',' read -r -a CHAT_ID_ARR <<< "${TELEGRAM_CHAT_IDS}"
