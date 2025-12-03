@@ -9,7 +9,7 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}DEPLOYER${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${GREEN}PERFECT HYBRID${RESET}\n"
 echo "----------------------------------------"
 
 # 1. Setup
@@ -32,12 +32,18 @@ IMAGE="a0x1/al0x1"
 
 # 3. Deployment
 echo ""
-echo -e "${YELLOW}➤ Deploying Server...${RESET}"
-
-# Cleanup
+echo -e "${YELLOW}➤ Cleaning Old Services...${RESET}"
 gcloud run services delete "$SERVICE_NAME" --platform managed --region "$REGION" --quiet >/dev/null 2>&1
 
-# Deploy Command (4 vCPU / 4 GB / Stable Tuning)
+echo -e "${YELLOW}➤ Deploying High-Spec Server (Private Mode)...${RESET}"
+
+# 🔥 HYBRID CONFIGURATION (Best of Both Worlds)
+# 1. --no-allow-unauthenticated (Bypass Method - Error Free)
+# 2. 4 vCPU / 4 GB / No-Throttling (Max Performance)
+# 3. GOMEMLIMIT=3600MiB (Memory Tuning from your snippet)
+# 4. KeepAlive=15 (Added for Stability)
+# 5. Removed Session Affinity (As you disliked it)
+
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --platform=managed \
@@ -45,18 +51,25 @@ gcloud run deploy "$SERVICE_NAME" \
   --memory="4Gi" \
   --cpu="4" \
   --timeout="3600" \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --use-http2 \
   --no-cpu-throttling \
   --execution-environment=gen2 \
-  --concurrency=500 \
+  --concurrency=1000 \
+  --set-env-vars UUID="${GEN_UUID}",GOMAXPROCS="4",GOMEMLIMIT="3600MiB",TZ="Asia/Yangon",XRAY_TRANSPORT_GRPC_KEEPALIVE="15" \
+  --port="8080" \
   --min-instances=1 \
   --max-instances=2 \
-  --set-env-vars UUID="${GEN_UUID}",TZ="Asia/Yangon",GOMAXPROCS="4",XRAY_TRANSPORT_GRPC_KEEPALIVE="15" \
-  --port="8080" \
   --quiet
 
-# Finalize Network
+echo -e "${YELLOW}➤ Unlocking Public Access...${RESET}"
+gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
+  --region="$REGION" \
+  --member="allUsers" \
+  --role="roles/run.invoker" \
+  --quiet >/dev/null 2>&1
+
+echo -e "${YELLOW}➤ Finalizing Network...${RESET}"
 gcloud run services update-traffic "$SERVICE_NAME" --to-latest --region="$REGION" --quiet >/dev/null 2>&1
 
 # Get URL
@@ -67,14 +80,13 @@ curl -s -o /dev/null "https://${DOMAIN}"
 # 4. Notification
 echo -e "${YELLOW}➤ Sending Key...${RESET}"
 
-# 🔥 Changed back to vpn.googleapis.com as requested
+# 🔥 Using vpn.googleapis.com
 URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
 START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
 END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
 
-# 🔥 Message format updated exactly as requested
 MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
 <blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
