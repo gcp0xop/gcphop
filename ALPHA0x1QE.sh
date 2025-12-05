@@ -9,7 +9,7 @@ RESET='\033[0m'
 BOLD='\033[1m'
 
 clear
-printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${RED}VOID${RESET}\n"
+printf "\n${RED}${BOLD}🚀 ALPHA${YELLOW}0x1 ${BLUE}STEALTH FIX${RESET}\n"
 echo "----------------------------------------"
 
 # 1. Setup
@@ -35,15 +35,13 @@ echo ""
 echo -e "${YELLOW}➤ Cleaning Old Services...${RESET}"
 gcloud run services delete "$SERVICE_NAME" --platform managed --region "$REGION" --quiet >/dev/null 2>&1
 
-echo -e "${YELLOW}➤ Deploying Server...${RESET}"
+echo -e "${YELLOW}➤ Deploying Stealth Server...${RESET}"
 
-# 🔥 FINAL CONFIGURATION
-# 1. 4 vCPU / 4 GB RAM (Hardware Max)
-# 2. GOMEMLIMIT=4000MiB (Memory Max)
-# 3. GOGC=20 (Aggressive CPU Speed)
-# 4. FORCE_FLUSH=true (Zero Latency)
-# 5. LOG_LEVEL=none (Save CPU)
-# 6. IPv4 Only (Fast DNS)
+# 🔥 STEALTH CONFIGURATION (Mytel Bypass)
+# 1. 4 vCPU / 4 GB (Max Power but Safe)
+# 2. GOMEMLIMIT=3072MiB (3GB Limit - Leaves 1GB for System Stability)
+# 3. KeepAlive=25s (Longer interval to look natural)
+# 4. Removed aggressive flushing (To hide from ISP detection)
 
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
@@ -56,24 +54,9 @@ gcloud run deploy "$SERVICE_NAME" \
   --use-http2 \
   --no-cpu-throttling \
   --execution-environment=gen2 \
-  --concurrency=1000 \
+  --concurrency=500 \
   --session-affinity \
-  --set-env-vars "\
-UUID=${GEN_UUID},\
-TZ=Asia/Yangon,\
-GOMAXPROCS=4,\
-GOMEMLIMIT=4000MiB,\
-GOGC=20,\
-GODEBUG=madvdontneed=1,netdns=go,\
-ASYNC_IO_ENABLE=true,\
-XRAY_TRANSPORT_GRPC_FORCE_FLUSH=true,\
-XRAY_TRANSPORT_GRPC_PERMIT_WITHOUT_STREAM=true,\
-XRAY_TRANSPORT_GRPC_KEEPALIVE=10,\
-XRAY_TRANSPORT_GRPC_INITIAL_WINDOW_SIZE=1048576,\
-XRAY_LOG_LEVEL=none,\
-XRAY_DNS_QUERY_STRATEGY=UseIPv4,\
-V2RAY_BUF_READ_SIZE=64,\
-V2RAY_BUF_WRITE_SIZE=64" \
+  --set-env-vars UUID="${GEN_UUID}",GOMAXPROCS="4",GOMEMLIMIT="3072MiB",GOGC="80",TZ="Asia/Yangon",XRAY_TRANSPORT_GRPC_KEEPALIVE="25",XRAY_BROWSER_DIALER_ORDER="ipv4_first" \
   --port="8080" \
   --min-instances=1 \
   --max-instances=2 \
@@ -90,14 +73,13 @@ curl -s -o /dev/null "https://${DOMAIN}"
 # 4. Notification
 echo -e "${YELLOW}➤ Sending Key...${RESET}"
 
-# Address: vpn.googleapis.com (Standard High Speed)
-URI="vless://${GEN_UUID}@vpn.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
+# 🔥 Using m.googleapis.com (ISP cannot block this easily)
+URI="vless://${GEN_UUID}@m.googleapis.com:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=Tg-@Alpha0x1&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
 START_LOCAL="$(date +'%d.%m.%Y %I:%M %p')"
 END_LOCAL="$(date -d '+5 hours 10 minutes' +'%d.%m.%Y %I:%M %p')"
 
-# Requested Message Format
 MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
 <blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
