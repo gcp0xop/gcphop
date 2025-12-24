@@ -30,7 +30,7 @@ fi
 # =================== 2. Configuration ===================
 SERVER_NAME="Alpha-GCP-$(date +%s | tail -c 4)"
 UUID=$(cat /proc/sys/kernel/random/uuid)
-SERVICE_NAME="alpha-gcp"
+SERVICE_NAME="alpha-gcp"  # Cloud Run name must be lowercase
 REGION="us-central1"
 # Using Xray for better gRPC performance
 IMAGE="ghcr.io/teddysun/xray:latest" 
@@ -75,8 +75,12 @@ CONFIG_JSON=$(cat <<EOF
 EOF
 )
 
-# Minify JSON to one line
-CONFIG_JSON=$(echo "$CONFIG_JSON" | jq -c . 2>/dev/null || echo "$CONFIG_JSON" | tr -d '\n' | tr -d ' ')
+# Minify JSON carefully (fail-safe if jq is missing)
+if command -v jq &> /dev/null; then
+    CONFIG_JSON=$(echo "$CONFIG_JSON" | jq -c .)
+else
+    CONFIG_JSON=$(echo "$CONFIG_JSON" | tr -d '\n' | tr -d ' ')
+fi
 
 # =================== 4. Deployment ===================
 echo -e "\n${YELLOW}➤ Deploying High-Performance gRPC Core...${RESET}"
@@ -105,8 +109,9 @@ gcloud run deploy "$SERVICE_NAME" \
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✔ Core deployed successfully!${RESET}"
 else
-    echo -e "${RED}✖ Deployment failed! Check Quota or Permissions.${RESET}"
-    # Show logs if failed
+    echo -e "${RED}✖ Deployment failed! Check logs below:${RESET}"
+    # Show logs if failed to understand why
+    echo -e "${YELLOW}Possible reasons: Quota exceeded, Service name conflict, or Permissions.${RESET}"
     gcloud run services describe "$SERVICE_NAME" --region "$REGION"
     exit 1
 fi
@@ -119,7 +124,7 @@ URL=$(gcloud run services describe "$SERVICE_NAME" --platform managed --region "
 DOMAIN=${URL#https://}
 
 if [[ -z "$DOMAIN" ]]; then
-    echo -e "${RED}✖ Error: Could not retrieve URL.${RESET}"
+    echo -e "${RED}✖ Error: Could not retrieve URL. Deployment might have failed silently.${RESET}"
     exit 1
 fi
 
@@ -127,17 +132,17 @@ fi
 echo -e "${YELLOW}➤ Generating Connection Keys...${RESET}"
 
 # VLESS gRPC Link Format
-# Note: For Cloud Run, SNI must match the Domain.
 VLESS_LINK="vless://${UUID}@${DOMAIN}:443?mode=gun&security=tls&encryption=none&type=grpc&serviceName=${SERVICE_PATH}&sni=${DOMAIN}#${SERVER_NAME}"
 
 export TZ="Asia/Yangon"
 START_LOCAL="$(date +'%d/%m %I:%M %p')"
-END_LOCAL="$(date -d '+4 hours' +'%d/%m %I:%M %p')" # Estimated session time
+END_LOCAL="$(date -d '+4 hours' +'%d/%m %I:%M %p')"
 
+# ⚠️ FIXED: Changed ${URI} to ${VLESS_LINK} below
 MSG="<blockquote>🚀 ${SERVER_NAME} V2RAY SERVICE</blockquote>
 <blockquote>⏰ 5-Hour Free Service</blockquote>
 <blockquote>📡Mytel 4G လိုင်းဖြတ် ဘယ်နေရာမဆိုသုံးလို့ရပါတယ်</blockquote>
-<pre><code>${URI}</code></pre>
+<pre><code>${VLESS_LINK}</code></pre>
 
 <blockquote>✅ စတင်ချိန်: <code>${START_LOCAL}</code></blockquote>
 <blockquote>⏳ပြီးဆုံးအချိန်: <code>${END_LOCAL}</code></blockquote>"
